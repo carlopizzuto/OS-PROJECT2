@@ -1,0 +1,2 @@
+[04/10] [16:30]
+I have read through the instuctions and checked out the supporting documents (sample run, c code). Overall, I am not too worried about starting the project late, I have had a lot of previous experiece with Operating Systems and C, so working with threads is not a problem. I am going to develop this in an Arch Linux env with nvim, and plan to start with simple functionalities and work my way up from there, starting with the tellers and then creating the customers.
