@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <time.h>
+#include <unistd.h>
 
 // Global Definitions
 #define NUM_TELLERS 3
@@ -39,18 +40,38 @@ void *customer_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
 	intptr_t cid = params->id;
 	
+	// print initial message
 	printf("Customer %d []: wants to perform a ", cid);
 	
+	// choose a transaction type
 	int transaction_type = rand() % 2; // 0 -> Deposit, 1 -> Withdrawal 
-	
 	if (transaction_type == 0) {
-		printf("deposit transaction\n", cid);
+		printf("deposit transaction\n");
 	} else {
-		printf("withdrawal transaction\n"), cid;
+		printf("withdrawal transaction\n");
 	}
 
-	// TODO: implement customer logic
+	fflush(stdout);
 	
+	// wait for 0 - 100 ms
+	int wait_time = rand() % 101; // [0, 100]
+	usleep(wait_time*1000);
+
+	printf("Customer %d []: going to the bank\n", cid);
+
+	sem_wait(&door_sem);
+	
+	printf("Customer %d []: entering the bank\n", cid);
+	fflush(stdout);
+	
+	sem_post(&door_sem);
+
+	printf("Customer %d []: getting in line\n", cid);
+	
+	printf("Customer %d []: selecting a teller\n", cid);
+	
+	// TODO: implement customer logic
+
 	printf("Customer %d []: leaving\n", cid);
 	pthread_exit(NULL);
 }
