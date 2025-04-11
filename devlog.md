@@ -3,3 +3,6 @@ I have read through the instuctions and checked out the supporting documents (sa
 
 [4/10] [21:50]
 I have finished implementing the skeleton of the main program. Currently it only creates 3 teller threads and 50 customer threads, but these do not do anything except print their IDs and a couple of messages. I have been struggling a little with vim and the keybinds, which caused me to delete half of my code (twice :<), so I will start commiting more often. In this session I had some logical errors that were hard to find but easy to fix, but the overall structure of the code is good (I think). Anyways, what I wanted to implement works, but I might add a little more.
+
+[4/11] [13:40]
+I didn't modify any more code yesterday. Today, I plan to have a quick session to start implementing the code for teller / customer threads. Right now they are assigned unique IDs and only print a couple of messages, but don't use the semaphores. I plan to start by implementing the 'easiest' functionalities for the the customer threads, and then move on to the teller threads.
