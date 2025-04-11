@@ -17,14 +17,14 @@ sem_t manager_sem;	// Manager Semaphore; only 1 teller at a time
 
 // strucutre for thread parameters
 typedef struct {
-	int id;
+	intptr_t id;
 } thread_param_t;
 
 
 // code for teller threads
 void *teller_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
-	int tid = params->id;
+	intptr_t tid = params->id;
 
 	printf("Teller %d []: ready to serve\n", tid);
 
@@ -37,13 +37,17 @@ void *teller_thread(void *arg) {
 // code for customer threads
 void *customer_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
-	int cid = params->id;
+	intptr_t cid = params->id;
 	
-	printf("Customer %d []: deciding what to do\n", cid);
+	printf("Customer %d []: wants to perform a ", cid);
 	
-	int random_num = (rand() % 100) + 1;
-
-	printf("Random Num: %d\n", random_num);
+	int transaction_type = rand() % 2; // 0 -> Deposit, 1 -> Withdrawal 
+	
+	if (transaction_type == 0) {
+		printf("deposit transaction\n", cid);
+	} else {
+		printf("withdrawal transaction\n"), cid;
+	}
 
 	// TODO: implement customer logic
 	
