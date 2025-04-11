@@ -1,8 +1,9 @@
-#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <time.h>
 
 // Global Definitions
 #define NUM_TELLERS 3
@@ -38,8 +39,11 @@ void *customer_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
 	int cid = params->id;
 	
-
 	printf("Customer %d []: deciding what to do\n", cid);
+	
+	int random_num = (rand() % 100) + 1;
+
+	printf("Random Num: %d\n", random_num);
 
 	// TODO: implement customer logic
 	
@@ -49,6 +53,9 @@ void *customer_thread(void *arg) {
 
 // main code
 int main () {
+	// seed the random num generator
+	srand(time(NULL));
+
 	// initialize semaphores
 	sem_init(&door_sem, 0, 2);
 	sem_init(&safe_sem, 0, 2);
