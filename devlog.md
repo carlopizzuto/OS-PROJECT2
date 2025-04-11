@@ -1,2 +1,5 @@
 [04/10] [16:30]
 I have read through the instuctions and checked out the supporting documents (sample run, c code). Overall, I am not too worried about starting the project late, I have had a lot of previous experiece with Operating Systems and C, so working with threads is not a problem. I am going to develop this in an Arch Linux env with nvim, and plan to start with simple functionalities and work my way up from there, starting with the tellers and then creating the customers.
+
+[4/10] [21:50]
+I have finished implementing the skeleton of the main program. Currently it only creates 3 teller threads and 50 customer threads, but these do not do anything except print their IDs and a couple of messages. I have been struggling a little with vim and the keybinds, which caused me to delete half of my code (twice :<), so I will start commiting more often. In this session I had some logical errors that were hard to find but easy to fix, but the overall structure of the code is good (I think). Anyways, what I wanted to implement works, but I might add a little more.
