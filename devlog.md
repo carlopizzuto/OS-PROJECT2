@@ -9,3 +9,6 @@ I didn't modify any more code yesterday. Today, I plan to have a quick session t
 
 [4/11] [14:35]
 This session I completed some of the customer code. I ran into some problems with printing the IDs of the threads inside of an 'if' statement, but I managed to find a workaround (temporary). I also created a makefile, but I would've liked to get more done. I'll try to do more today and tomorrow, but the day I will work on this the most is on Sunday (personal events this weekend).
+
+[4/13] [14:00]
+I plan on having a very long session where I'll finish everything. My plan is to finish implementing the Customer threads, and when I need to, switch to the teller threads. 
