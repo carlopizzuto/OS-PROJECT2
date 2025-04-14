@@ -8,7 +8,7 @@
 
 // global definitions
 #define NUM_TELLERS 3
-#define NUM_CUSTOMERS 5
+#define NUM_CUSTOMERS 50
 
 // strucutre for thread parameters
 typedef struct {
@@ -28,7 +28,9 @@ sem_t teller_available_sem;		// only 1 customer
 pthread_mutex_t teller_mutex = PTHREAD_MUTEX_INITIALIZER;
 int available_tellers[NUM_TELLERS];	// 1 if teller is free; 0 if busy
 int assigned_customers[NUM_TELLERS];	// IDs of customers assigned to tellers
-int served_customers = 0;
+					//
+pthread_mutex_t counter_mutex = PTHREAD_MUTEX_INITIALIZER;
+int remaining_customers = NUM_CUSTOMERS;
 
 
 pthread_mutex_t customer_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -57,12 +59,11 @@ void *teller_thread(void *arg) {
 	
 	// 1. teller lets everyone know it is ready to serve
 	printf("Teller %d []: ready to serve\n", tid);
-
-	pthread_mutex_lock(&teller_mutex);
-	while (!bank_closed) {
-		pthread_mutex_unlock(&teller_mutex);
+	
+	// teller loop
+	while (1) {
 		// 2. wait for customer to approach
-		printf("Teller %d []: waiting for a customer\n", tid);
+		printf("Teller %d []: waiting for a new customer\n", tid);
 		sem_wait(&teller_customer_sem[tid]);
 		// once approached
 		
@@ -70,6 +71,11 @@ void *teller_thread(void *arg) {
 		pthread_mutex_lock(&teller_mutex);
 		int cid = assigned_customers[tid];
 		pthread_mutex_unlock(&teller_mutex);
+		
+		// exit condition
+		if (cid == -1) {
+			break;
+		}
 
 		// 3. ask for customer's transaction
 		printf("Teller %d [Customer %d]: serving a customer\n", tid, cid);
@@ -134,15 +140,20 @@ void *teller_thread(void *arg) {
 		pthread_mutex_lock(&teller_mutex);
 		available_tellers[tid] = 1;
 		assigned_customers[tid] = -1;
-		served_customers++;
 		pthread_mutex_unlock(&teller_mutex);
 
+		pthread_mutex_lock(&counter_mutex);
+		
 		// notify of availability
 		sem_post(&teller_available_sem);
-				
-		// update served customers
-		pthread_mutex_lock(&teller_mutex);
-		
+
+		--remaining_customers;
+		int last = (remaining_customers == 0);
+		pthread_mutex_unlock(&counter_mutex);
+
+		if (last) {
+			break;
+		}
 	}
 		
 	printf("Teller %d []: leaving for the day\n", tid);
@@ -237,7 +248,7 @@ void *customer_thread(void *arg) {
 		
 	// 9. leave the bank (& simulation)
 	sem_wait(&door_sem);
-	printf("Customer %d []: leaving the bank\n", cid);
+	printf("Customer %d [Teller %d]: leaving the bank\n", cid, tid);
 	sem_post(&door_sem);
 	// singal teller of exit
 	sem_post(&communication_sem_2[tid]);
@@ -296,10 +307,16 @@ int main () {
 	for (int i=0; i<NUM_CUSTOMERS; i++) {
 		pthread_join(customers[i], NULL);
 	}
-
-	bank_closed = 1;
 	
 	// wait for teller threads to exit
+	for (int i=0; i<NUM_TELLERS; i++) {
+		pthread_mutex_lock(&teller_mutex);
+		assigned_customers[i] = -1;
+		pthread_mutex_unlock(&teller_mutex);
+		
+		sem_post(&teller_customer_sem[i]);
+	}
+
 	for (int i=0; i<NUM_TELLERS; i++) {
 		pthread_join(tellers[i], NULL);
 	}
@@ -311,6 +328,7 @@ int main () {
 	for (int i=0; i<NUM_TELLERS; i++) {
 		sem_destroy(&teller_customer_sem[i]);
 		sem_destroy(&communication_sem[i]);
+		sem_destroy(&communication_sem_2[i]);
 	}
 	// and mutexes
 	pthread_mutex_destroy(&teller_mutex);
