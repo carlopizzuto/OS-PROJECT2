@@ -13,13 +13,11 @@
 // strucutre for thread parameters
 typedef struct {
 	intptr_t id;
-	intptr_t other_id;
 } thread_param_t;
 
 // semaphore definitions
 sem_t door_sem;					// only 2 customers enter the door at a time
 sem_t safe_sem;					// only 2 tellers open the safe at a time
-sem_t manager_sem;				// only 1 teller talks to the manager at a time
 sem_t teller_customer_sem[NUM_TELLERS]; 	// only 1 customer per teller
 sem_t communication_sem[NUM_TELLERS];
 sem_t communication_sem_2[NUM_TELLERS];
@@ -28,17 +26,15 @@ sem_t teller_available_sem;		// only 1 customer
 pthread_mutex_t teller_mutex = PTHREAD_MUTEX_INITIALIZER;
 int available_tellers[NUM_TELLERS];	// 1 if teller is free; 0 if busy
 int assigned_customers[NUM_TELLERS];	// IDs of customers assigned to tellers
-					//
+					
 pthread_mutex_t counter_mutex = PTHREAD_MUTEX_INITIALIZER;
 int remaining_customers = NUM_CUSTOMERS;
-
 
 pthread_mutex_t customer_mutex = PTHREAD_MUTEX_INITIALIZER;
 int customer_transactions[NUM_CUSTOMERS];
 
 int line[NUM_CUSTOMERS];
 int line_count = 0;
-int bank_closed = 0;
 
 void pop_first(int list[], int *list_count) {
 	if (*list_count == 0) {
@@ -142,18 +138,8 @@ void *teller_thread(void *arg) {
 		assigned_customers[tid] = -1;
 		pthread_mutex_unlock(&teller_mutex);
 
-		pthread_mutex_lock(&counter_mutex);
-		
 		// notify of availability
 		sem_post(&teller_available_sem);
-
-		--remaining_customers;
-		int last = (remaining_customers == 0);
-		pthread_mutex_unlock(&counter_mutex);
-
-		if (last) {
-			break;
-		}
 	}
 		
 	printf("Teller %d []: leaving for the day\n", tid);
@@ -214,7 +200,6 @@ void *customer_thread(void *arg) {
 			tid = i;
 			available_tellers[i] = 0;
 			assigned_customers[i] = cid;
-			// printf("[T %d] INSIDE TELLER %d: %d\n", cid, tid, available_tellers[i]);
 			break;
 		}
 	}
@@ -263,19 +248,15 @@ int main () {
 	// initialize semaphores
 	sem_init(&door_sem, 0, 2);
 	sem_init(&safe_sem, 0, 2);
-	sem_init(&manager_sem, 0, 1);
 	sem_init(&teller_available_sem, 0, NUM_TELLERS);
 
 	// initialize teller-customer sems and list of available tellers
 	for (int i=0; i<NUM_TELLERS; i++) {
 		available_tellers[i] = 1;			// all tellers are initially available
+		assigned_customers[i] = -1;
 		sem_init(&teller_customer_sem[i], 0, 0);	// all tellers wait on a customer
 		sem_init(&communication_sem[i], 0, 0);
 		sem_init(&communication_sem_2[i], 0, 0);
-	}
-
-	for (int i=0; i<NUM_CUSTOMERS; i++) {
-		assigned_customers[i] = 0;
 	}
 
 	// declare arrays for threads
@@ -324,7 +305,7 @@ int main () {
 	// clean up semaphores
 	sem_destroy(&door_sem);
 	sem_destroy(&safe_sem);
-	sem_destroy(&manager_sem);
+	sem_destroy(&teller_available_sem);
 	for (int i=0; i<NUM_TELLERS; i++) {
 		sem_destroy(&teller_customer_sem[i]);
 		sem_destroy(&communication_sem[i]);
