@@ -28,6 +28,7 @@ sem_t teller_available_sem;		// only 1 customer
 pthread_mutex_t teller_mutex = PTHREAD_MUTEX_INITIALIZER;
 int available_tellers[NUM_TELLERS];	// 1 if teller is free; 0 if busy
 int assigned_customers[NUM_TELLERS];	// IDs of customers assigned to tellers
+int served_customers = 0;
 
 
 pthread_mutex_t customer_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -35,6 +36,7 @@ int customer_transactions[NUM_CUSTOMERS];
 
 int line[NUM_CUSTOMERS];
 int line_count = 0;
+int bank_closed = 0;
 
 void pop_first(int list[], int *list_count) {
 	if (*list_count == 0) {
@@ -52,43 +54,97 @@ void pop_first(int list[], int *list_count) {
 void *teller_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
 	intptr_t tid = params->id;
-
+	
+	// 1. teller lets everyone know it is ready to serve
 	printf("Teller %d []: ready to serve\n", tid);
-	printf("Teller %d []: waiting for a customer\n", tid);
-	
-	// wait for customer to select this teller
-	sem_wait(&teller_customer_sem[tid]);
-	// once selected
-	
-	// get the customer's ID
+
 	pthread_mutex_lock(&teller_mutex);
-	int cid = assigned_customers[tid];
-	pthread_mutex_unlock(&teller_mutex);
-	printf("Teller %d [Customer %d]: serving a customer\n", tid, cid);
-	printf("Teller %d [Customer %d]: asking for transaction\n", tid, cid);
-	
-	// signal customer to choose transaction
-	sem_post(&communication_sem[tid]);
+	while (!bank_closed) {
+		pthread_mutex_unlock(&teller_mutex);
+		// 2. wait for customer to approach
+		printf("Teller %d []: waiting for a customer\n", tid);
+		sem_wait(&teller_customer_sem[tid]);
+		// once approached
+		
+		// get the customer's ID
+		pthread_mutex_lock(&teller_mutex);
+		int cid = assigned_customers[tid];
+		pthread_mutex_unlock(&teller_mutex);
 
-	// wait for a response
-	sem_wait(&communication_sem_2[tid]);
-	
-	int transaction = -1;
-	pthread_mutex_lock(&customer_mutex);
-	transaction = customer_transactions[cid];
-	pthread_mutex_unlock(&customer_mutex);
+		// 3. ask for customer's transaction
+		printf("Teller %d [Customer %d]: serving a customer\n", tid, cid);
+		printf("Teller %d [Customer %d]: asking for transaction\n", tid, cid);
+		
+		// signal customer to choose transaction
+		sem_post(&communication_sem[tid]);
 
-	if (transaction == 0) {
-		printf("Teller %d [Customer %d]: handling deposit transaction\n", tid, cid);
-	} else if(transaction == 1) {
-		printf("Teller %d [Customer %d]: handling withdrawal transaction\n", tid, cid);
-	} else {
-		perror("ERROR with teller transaction type");
+		// 4. wait for customer's transaction
+		sem_wait(&communication_sem_2[tid]);
+		// once customer prints transaction
+
+		// get the transaction from the list
+		int transaction = -1;
+		pthread_mutex_lock(&customer_mutex);
+		transaction = customer_transactions[cid];
+		pthread_mutex_unlock(&customer_mutex);
+		
+		// check the transaction type
+		if (transaction == 0) { // deposit
+			printf("Teller %d [Customer %d]: handling deposit transaction\n", tid, cid);
+		} else if(transaction == 1) { // withdrawal
+			// 5. if the deposit is a widthdrawal
+			printf("Teller %d [Customer %d]: handling withdrawal transaction\n", tid, cid);
+			// go to the manager & ask for permission
+			printf("Teller %d [Customer %d]: going to the manager\n", tid, cid);
+			printf("Teller %d [Customer %d]: asking manager for permission\n", tid, cid);
+			usleep(((rand() % 25) + 6) * 1000);
+		} else {
+			perror("ERROR with teller transaction type");
+		}
+		
+		// 6. go to the safe
+		printf("Teller %d [Customer %d]: going to the safe\n", tid, cid);
+		// if occupied by 2 tellers, wait
+		sem_wait(&safe_sem);
+		// once unoccupied, enter
+		printf("Teller %d [Customer %d]: entering the safe\n", tid, cid);
+		
+		// 7. perform the transaction and leave the safe
+		usleep(((rand() % 40) + 11) * 1000);
+		printf("Teller %d [Customer %d]: leaving the safe\n", tid, cid);
+		// free up a spot 
+		sem_post(&safe_sem);
+
+		// 8. notify customer of transaction completion
+		if (transaction == 0) { 
+			printf("Teller %d [Customer %d]: finishing deposit transaction\n", tid, cid);
+		} else if(transaction == 1) { 
+			printf("Teller %d [Customer %d]: finishing withdrawal transaction\n", tid, cid);
+		} else {
+			perror("ERROR with teller transaction type");
+		}
+		sem_post(&communication_sem[tid]);
+			
+		// 9. wait for customer to leave
+		printf("Teller %d [Customer %d]: waiting for customer to leave\n", tid, cid);
+		sem_wait(&communication_sem_2[tid]);
+		// once customer leaves
+		
+		// make thread available again
+		pthread_mutex_lock(&teller_mutex);
+		available_tellers[tid] = 1;
+		assigned_customers[tid] = -1;
+		served_customers++;
+		pthread_mutex_unlock(&teller_mutex);
+
+		// notify of availability
+		sem_post(&teller_available_sem);
+				
+		// update served customers
+		pthread_mutex_lock(&teller_mutex);
+		
 	}
-
-
-	// TODO: implement teller logic
-	
+		
 	printf("Teller %d []: leaving for the day\n", tid);
 	pthread_exit(NULL);
 }
@@ -99,35 +155,35 @@ void *customer_thread(void *arg) {
 	thread_param_t *params = (thread_param_t*)arg;
 	intptr_t cid = params->id;
 	
-	// choose a transaction type
-	int transaction_type = rand() % 2; // 0 -> Deposit, 1 -> Withdrawal 
-	if (transaction_type == 0) {
+	// 1. choose a transaction type
+	pthread_mutex_lock(&customer_mutex);
+	int transaction_type = rand() % 2;  
+	if (transaction_type == 0) { // -> deposit
 		printf("Customer %d []: wants to perform a deposit\n", cid);
-		transaction_type = 0;
-	} else {
+		customer_transactions[cid] = 0;
+	} else if (transaction_type == 1) { // -> withdrawal
 		printf("Customer %d []: wants to perform a withdrawal\n", cid);
-		transaction_type = 1;
+		customer_transactions[cid] = 1;
+	} else {
+		perror("ERROR customer transaction type");
+		pthread_exit(NULL);
 	}
-
+	pthread_mutex_unlock(&customer_mutex);
 	fflush(stdout);
 	
-	// wait for 0 - 100 ms
+	// 2. wait for 0 - 100 ms
 	usleep(rand() % 101 * 1000);
 	
-	// assign transaction type to customer
-	pthread_mutex_lock(&customer_mutex);
-	customer_transactions[cid] = transaction_type;
-	pthread_mutex_unlock(&customer_mutex);
-
+	// 3. go to the bank
 	printf("Customer %d []: going to the bank\n", cid);
-	
-	// enter ther bank (2 at a time)
+	// if doot is occupied by 2 customer, wait
 	sem_wait(&door_sem);
+	// once unoccupied, enter
 	printf("Customer %d []: entering the bank\n", cid);
 	fflush(stdout);
 	sem_post(&door_sem);
 	
-	// get in line
+	// 4. get in line
 	printf("Customer %d []: getting in line\n", cid);
 	pthread_mutex_lock(&customer_mutex);
 	line[line_count] = cid;
@@ -136,9 +192,9 @@ void *customer_thread(void *arg) {
 	
 	// wait for an available teller
 	sem_wait(&teller_available_sem);
-	// teller is available
+	// once teller is available
 	
-	// select a teller
+	// select available teller
 	printf("Customer %d []: selecting a teller\n", cid);
 	pthread_mutex_lock(&teller_mutex);
 	int tid = -1;
@@ -152,32 +208,39 @@ void *customer_thread(void *arg) {
 		}
 	}
 	pthread_mutex_unlock(&teller_mutex);
-
 	if (tid == -1) {
-		perror("ERROR with assigning customer to teller");
+		fprintf(stderr, "Customer %ld: no available teller found (logical error)", cid);
 		pthread_exit(NULL);
 	}
-
+	
+	// 5. intoduce itself to the teller
 	printf("Customer %d [Teller %d]: selects teller\n", cid, tid);
 	printf("Customer %d [Teller %d]: introduces itself\n", cid, tid);
-	
-	// signal teller
+	// send signal
 	sem_post(&teller_customer_sem[tid]);
 	
-	// wait for teller to ask for transaction
+	// 6. wait for teller to ask for transaction
 	sem_wait(&communication_sem[tid]);
-	// after teller asks
+	// once teller asks
 
-	// print transaction
+	// 7. tell the teller the transaction
 	if (transaction_type == 0) {
 		printf("Customer %d [Teller %d]: asks for a deposit transaction\n", cid, tid);
 	} else {
 		printf("Customer %d [Teller %d]: asks for a withdrawal transaction\n", cid, tid);
 	}
-
+	// signal the teller
 	sem_post(&communication_sem_2[tid]);
-
-	printf("Customer %d []: leaving\n", cid);
+	
+	// 8. wait for the teller to finish transaction
+	sem_wait(&communication_sem[tid]);
+		
+	// 9. leave the bank (& simulation)
+	sem_wait(&door_sem);
+	printf("Customer %d []: leaving the bank\n", cid);
+	sem_post(&door_sem);
+	// singal teller of exit
+	sem_post(&communication_sem_2[tid]);
 	pthread_exit(NULL);
 }
 
@@ -198,6 +261,10 @@ int main () {
 		sem_init(&teller_customer_sem[i], 0, 0);	// all tellers wait on a customer
 		sem_init(&communication_sem[i], 0, 0);
 		sem_init(&communication_sem_2[i], 0, 0);
+	}
+
+	for (int i=0; i<NUM_CUSTOMERS; i++) {
+		assigned_customers[i] = 0;
 	}
 
 	// declare arrays for threads
@@ -229,6 +296,8 @@ int main () {
 	for (int i=0; i<NUM_CUSTOMERS; i++) {
 		pthread_join(customers[i], NULL);
 	}
+
+	bank_closed = 1;
 	
 	// wait for teller threads to exit
 	for (int i=0; i<NUM_TELLERS; i++) {
