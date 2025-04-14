@@ -12,3 +12,6 @@ This session I completed some of the customer code. I ran into some problems wit
 
 [4/13] [14:00]
 I plan on having a very long session where I'll finish everything. My plan is to finish implementing the Customer threads, and when I need to, switch to the teller threads. 
+
+[4/13] [21:35]
+After a lot of bugs, sweat and tears I have managed to get a working program. I had a lot of logical errors along the way, most of which had to do with the synchronization, but the one that I spent most time on was the teller threads not exiting, which I managed to fix with a signal from main. Overall I actually had some fun and learnt a lot, but I could've started sooner. I am now going to do come cleaning of my code and then send it.
