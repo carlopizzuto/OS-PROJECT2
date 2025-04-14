@@ -16,37 +16,22 @@ typedef struct {
 } thread_param_t;
 
 // semaphore definitions
-sem_t door_sem;					// only 2 customers enter the door at a time
-sem_t safe_sem;					// only 2 tellers open the safe at a time
+sem_t door_sem;					// only 2 customers enter the door
+sem_t safe_sem;					// only 2 tellers open the safe 
+sem_t manager_sem;				// only 1 teller can talk to the manager
+sem_t teller_available_sem;			// only 3 available tellers 
 sem_t teller_customer_sem[NUM_TELLERS]; 	// only 1 customer per teller
-sem_t communication_sem[NUM_TELLERS];
-sem_t communication_sem_2[NUM_TELLERS];
-sem_t teller_available_sem;		// only 1 customer 
+sem_t cust_to_teller_sem[NUM_TELLERS];		// customer - teller sync
+sem_t teller_to_cust_sem[NUM_TELLERS];		// customer - teller sync
+
 
 pthread_mutex_t teller_mutex = PTHREAD_MUTEX_INITIALIZER;
-int available_tellers[NUM_TELLERS];	// 1 if teller is free; 0 if busy
-int assigned_customers[NUM_TELLERS];	// IDs of customers assigned to tellers
+int available_tellers[NUM_TELLERS];		// 1 if teller is free; 0 if busy
+int assigned_customers[NUM_TELLERS];		// IDs of customers assigned to tellers
 					
-pthread_mutex_t counter_mutex = PTHREAD_MUTEX_INITIALIZER;
-int remaining_customers = NUM_CUSTOMERS;
-
 pthread_mutex_t customer_mutex = PTHREAD_MUTEX_INITIALIZER;
-int customer_transactions[NUM_CUSTOMERS];
+int customer_transactions[NUM_CUSTOMERS];	// 0 for deposit; 1 for withdrawal
 
-int line[NUM_CUSTOMERS];
-int line_count = 0;
-
-void pop_first(int list[], int *list_count) {
-	if (*list_count == 0) {
-		return;
-	}
-
-	for (int i=0; i<*list_count-1; i++) {
-		list[i] = list[i+1];
-	}
-
-	(*list_count)--;
-}
 
 // code for teller threads
 void *teller_thread(void *arg) {
@@ -78,10 +63,10 @@ void *teller_thread(void *arg) {
 		printf("Teller %d [Customer %d]: asking for transaction\n", tid, cid);
 		
 		// signal customer to choose transaction
-		sem_post(&communication_sem[tid]);
+		sem_post(&cust_to_teller_sem[tid]);
 
 		// 4. wait for customer's transaction
-		sem_wait(&communication_sem_2[tid]);
+		sem_wait(&teller_to_cust_sem[tid]);
 		// once customer prints transaction
 
 		// get the transaction from the list
@@ -94,12 +79,17 @@ void *teller_thread(void *arg) {
 		if (transaction == 0) { // deposit
 			printf("Teller %d [Customer %d]: handling deposit transaction\n", tid, cid);
 		} else if(transaction == 1) { // withdrawal
-			// 5. if the deposit is a widthdrawal
+			// 5. if the deposit is a withdrawal
 			printf("Teller %d [Customer %d]: handling withdrawal transaction\n", tid, cid);
 			// go to the manager & ask for permission
 			printf("Teller %d [Customer %d]: going to the manager\n", tid, cid);
+			// if manager is busy, wait
+			sem_wait(&manager_sem);
+			// once manager is free
 			printf("Teller %d [Customer %d]: asking manager for permission\n", tid, cid);
 			usleep(((rand() % 25) + 6) * 1000);
+			// free the manager
+			sem_post(&manager_sem);
 		} else {
 			perror("ERROR with teller transaction type");
 		}
@@ -125,11 +115,11 @@ void *teller_thread(void *arg) {
 		} else {
 			perror("ERROR with teller transaction type");
 		}
-		sem_post(&communication_sem[tid]);
+		sem_post(&cust_to_teller_sem[tid]);
 			
 		// 9. wait for customer to leave
 		printf("Teller %d [Customer %d]: waiting for customer to leave\n", tid, cid);
-		sem_wait(&communication_sem_2[tid]);
+		sem_wait(&teller_to_cust_sem[tid]);
 		// once customer leaves
 		
 		// make thread available again
@@ -181,13 +171,6 @@ void *customer_thread(void *arg) {
 	sem_post(&door_sem);
 	
 	// 4. get in line
-	printf("Customer %d []: getting in line\n", cid);
-	pthread_mutex_lock(&customer_mutex);
-	line[line_count] = cid;
-	line_count++;
-	pthread_mutex_unlock(&customer_mutex);
-	
-	// wait for an available teller
 	sem_wait(&teller_available_sem);
 	// once teller is available
 	
@@ -216,7 +199,7 @@ void *customer_thread(void *arg) {
 	sem_post(&teller_customer_sem[tid]);
 	
 	// 6. wait for teller to ask for transaction
-	sem_wait(&communication_sem[tid]);
+	sem_wait(&cust_to_teller_sem[tid]);
 	// once teller asks
 
 	// 7. tell the teller the transaction
@@ -226,17 +209,17 @@ void *customer_thread(void *arg) {
 		printf("Customer %d [Teller %d]: asks for a withdrawal transaction\n", cid, tid);
 	}
 	// signal the teller
-	sem_post(&communication_sem_2[tid]);
+	sem_post(&teller_to_cust_sem[tid]);
 	
 	// 8. wait for the teller to finish transaction
-	sem_wait(&communication_sem[tid]);
+	sem_wait(&cust_to_teller_sem[tid]);
 		
 	// 9. leave the bank (& simulation)
 	sem_wait(&door_sem);
 	printf("Customer %d [Teller %d]: leaving the bank\n", cid, tid);
 	sem_post(&door_sem);
 	// singal teller of exit
-	sem_post(&communication_sem_2[tid]);
+	sem_post(&teller_to_cust_sem[tid]);
 	pthread_exit(NULL);
 }
 
@@ -248,6 +231,7 @@ int main () {
 	// initialize semaphores
 	sem_init(&door_sem, 0, 2);
 	sem_init(&safe_sem, 0, 2);
+	sem_init(&manager_sem, 0, 1);
 	sem_init(&teller_available_sem, 0, NUM_TELLERS);
 
 	// initialize teller-customer sems and list of available tellers
@@ -255,8 +239,8 @@ int main () {
 		available_tellers[i] = 1;			// all tellers are initially available
 		assigned_customers[i] = -1;
 		sem_init(&teller_customer_sem[i], 0, 0);	// all tellers wait on a customer
-		sem_init(&communication_sem[i], 0, 0);
-		sem_init(&communication_sem_2[i], 0, 0);
+		sem_init(&cust_to_teller_sem[i], 0, 0);
+		sem_init(&teller_to_cust_sem[i], 0, 0);
 	}
 
 	// declare arrays for threads
@@ -305,11 +289,12 @@ int main () {
 	// clean up semaphores
 	sem_destroy(&door_sem);
 	sem_destroy(&safe_sem);
+	sem_destroy(&manager_sem);
 	sem_destroy(&teller_available_sem);
 	for (int i=0; i<NUM_TELLERS; i++) {
 		sem_destroy(&teller_customer_sem[i]);
-		sem_destroy(&communication_sem[i]);
-		sem_destroy(&communication_sem_2[i]);
+		sem_destroy(&cust_to_teller_sem[i]);
+		sem_destroy(&teller_to_cust_sem[i]);
 	}
 	// and mutexes
 	pthread_mutex_destroy(&teller_mutex);
